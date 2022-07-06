@@ -1,0 +1,24 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+bleak = "*"
+matplotlib = "*"
+numpy = "*"
+pyqt5 = "*"
+qasync = "*"
+cmsisdsp = "*"
+scipy = "*"
+pyqtgraph = "*"
+
+[dev-packages]
+black = "*"
+pyinstaller = "*"
+
+[requires]
+python_version = "3.9"
+
+[pipenv]
+allow_prereleases = true
