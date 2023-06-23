@@ -33,89 +33,55 @@ from matplotlib.figure import Figure
 
 CHARACTERISTIC_UUID = f"0000{0x00f0:0{4}x}-8e22-4541-9d4c-21edae82ed19"
 
+SUMS_FFT_SIZE = 20
+HOP_SIZE = 20
+X_DIM = 200
+Y_DIM = SUMS_FFT_SIZE
+
 BIN_NO = 20
-BIN_START = 10
+BIN_START = 90
+
+h_window = np.hanning(SUMS_FFT_SIZE)
+
+q16_15_to_float = lambda q: q / 2**15
+
+def append_column_matrix(M, column):
+    if M.shape[1] < X_DIM:
+        return np.c_[M, column]
+    else:
+        return np.c_[M[:, 1:], column]
 
 
-def distance_to_bin(distance, samp_freq):
-    freq = distance * 2 * 2e9 / (525e-6 * speed_of_light)
+def distance_to_bin(distance, samp_freq, ramp_time):
+    freq = distance * 2 * 2e9 / (ramp_time * speed_of_light)
     bin = freq / samp_freq * 256
     return bin
 
-class PGCanvas(pg.PlotWidget):
-    def __init__(self, parent=None, background='default', plotItem=None, **kargs):
-        super().__init__(parent, background, plotItem, **kargs)
-        self.pi = self.getPlotItem()
-        self.pi.showGrid(x=True, y=True)
-        self.pi.setLabel('left', 'Amplitude')
-        self.pi.setLabel('bottom', 'Bins')
-        self.pi.setRange(xRange=(BIN_START, BIN_START+BIN_NO), yRange=(-60, 40))
-        self.dataline = self.pi.plot(pen=pg.mkPen('g', width=1), name='Re')
-        self.dataline2 = self.pi.plot(pen=pg.mkPen('b', width=1), name='Im')
-        self.dataline3 = self.pi.plot(pen=pg.mkPen('w', width=3), name='Lin')
-        self.dataline4 = self.pi.plot(pen=pg.mkPen('w', width=1), name='Log')
+class PGCanvas(pg.ImageView):
+
+    def __init__(self, parent=None, background='default', view=None, **kargs):
+        super().__init__(parent, background, view, **kargs)
+        self.img_mat = np.random.rand(Y_DIM, X_DIM)
+        self.ii = self.getImageItem()
+        self.vw = self.getView()
+        self.setColorMap(pg.colormap.get("jet", source="matplotlib"))
+        self.ii.setImage(np.random.normal(size=(Y_DIM, X_DIM)).T)
+        self.vw.setAspectLocked(lock=False) 
+        self.vw.enableAutoRange('y', True)
         
     def update_plot(self, byteobj: bytearray):
-        data_u = unpack("<120h1H5x", byteobj)
-        data_u = data_u[: (BIN_NO << 1)]
-        bins = np.arange(BIN_START, BIN_START + BIN_NO)
-        #data = np.asarray(arm_q15_to_float(data_u))
-        data = np.asarray(data_u, dtype=np.int16)
-        if BIN_START == 0:
-            data[0] += 1
-            data[1] += 1
-        Re = data[::2]
-        Im = data[1::2]
-        #lindata= np.abs(Re + 1j * Im)
-        lindata= 20*np.log10(np.abs(Re + 1j * Im))
-        logdata = 10*np.log10((lindata*3.3/2*2)**2/1e3*1e3)
-        #self.dataline.setData(bins, Re)
-        #self.dataline2.setData(bins, Im)
-        self.dataline3.setData(bins, lindata)
-        #self.dataline4.setData(bins, logdata)
-        Re = Re/2**15
-        Im = Im/2**15
-        with open('medida.csv', mode='a') as f:
-            f.write(f"{','.join(Re.astype(str))};{','.join(Im.astype(str))}\n")
+        data_u = np.asarray(unpack("<60i7x", byteobj)) # 60 int32 values and 7 bytes padding
+        data_u = q16_15_to_float(data_u)
+        Re = data_u[::2]
+        Im = data_u[1::2]
 
-class MplCanvas(FigureCanvasQTAgg):
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
-        fig = Figure(figsize=(width, height), dpi=dpi)
-        self.axes = fig.add_subplot(111)
-        self.axes.set_title("Live FFT")
-        self.axes.set_xlabel("Bins")
-        self.axes.set_ylabel("Amplitude")
-        self.axes.yaxis.set_major_locator(AutoLocator())
-        self.axes.yaxis.set_minor_locator(AutoMinorLocator())
-        self.axes.xaxis.set_major_locator(MultipleLocator(1))
-        self.axes.grid(linestyle="--", linewidth=0.5, which="major")
-        self.axes.grid(linestyle="-.", linewidth=0.1, which="minor")
-        (self.line,) = self.axes.plot(range(BIN_NO), np.zeros(BIN_NO), c="b", lw=0.8)
-        self.axes.set_xlim(BIN_START, BIN_NO - 1)
-        self.axes.set_ylim([0, 1])
-        fig.tight_layout()
-        self.next_time = 0
-        super(MplCanvas, self).__init__(fig)
-
-    def update_plot(self, byteobj: bytearray):
-        now_time = time.time_ns()
-        if self.next_time < now_time:
-            self.next_time = now_time + 50e6
-            # self.axes.cla()  # Clear the canvas.
-            data_u = unpack("<120h1H5x", byteobj)
-            data_u = data_u[: (BIN_NO << 1)]
-            bins = np.arange(BIN_START, BIN_NO)
-            #data = np.asarray(arm_q15_to_float(data_u))
-            data = data_u
-            data[0] += 1
-            data[1] += 1
-            Re = data[::2]
-            Im = data[1::2]
-            # self.axes.plot(bins, np.abs(Re + 1j*Im), c="b", lw=0.8)
-            self.line.set_data(bins, np.abs(Re + 1j * Im)/256)
-            # Trigger the canvas to update and redraw.
-            self.draw()
-            self.flush_events()
+        imag_array = np.add(Re, 1j*Im)
+        for i in range(30-SUMS_FFT_SIZE+1):
+            # fft of first 20 samples shifted by i
+            fft_arr = np.fft.fft(imag_array[i:SUMS_FFT_SIZE+i] * h_window, n=SUMS_FFT_SIZE) / SUMS_FFT_SIZE
+            autopower = np.abs(fft_arr * np.conj(fft_arr))
+            self.img_mat = append_column_matrix(self.img_mat, autopower)
+        self.ii.setImage(self.img_mat.T)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -151,7 +117,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logo_gmr.setPixmap(pixmap_gmr.scaled(100, 100, QtCore.Qt.KeepAspectRatio))
 
         #self.sc = MplCanvas(self, width=8, height=6, dpi=90)
-        self.sc = PGCanvas()
+        self.sc = PGCanvas(view=pg.PlotItem())
         # Create toolbar, passing canvas as first parament, parent (self, the MainWindow) as second.
         #self.toolbar = NavigationToolbar(self.sc, self)
 
@@ -164,7 +130,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.window_title.setAlignment(QtCore.Qt.AlignLeft)
         self.layout.addLayout(self.window_title)
         #self.layout.addWidget(self.toolbar)
-        self.layout.addWidget(self.sc)
+        self.layout.addWidget(self.sc, stretch=2)
         self.toolbar_bottom.addWidget(scan_button)
         self.toolbar_bottom.addWidget(self.devices_combobox)
         self.toolbar_bottom.addWidget(connect_button)
@@ -228,8 +194,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_edit.appendPlainText(f"{time.ctime()}: << Scan complete")
 
     def handle_message_changed(self, message):
-        #self.log_edit.appendPlainText(f"{time.ctime()} : >> Ramp in: {message}")
-        pass
+        self.log_edit.appendPlainText(f"{time.ctime()} : >> Ramp in: {message}")
 
 
 @dataclass
@@ -264,8 +229,6 @@ class QBleakClient(QtCore.QObject):
 
 
 def main():
-    with open('medida.csv', mode='a') as f:
-        f.write("I;Q\n")
     app = QtWidgets.QApplication(sys.argv)
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
