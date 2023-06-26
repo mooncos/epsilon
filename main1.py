@@ -31,7 +31,7 @@ from matplotlib.backends.backend_qt5agg import (
 )
 from matplotlib.figure import Figure
 
-CHARACTERISTIC_UUID = f"0000{0x00f0:0{4}x}-8e22-4541-9d4c-21edae82ed19"
+CHARACTERISTIC_UUID = f"0000{0x00f1:0{4}x}-8e22-4541-9d4c-21edae82ed19"
 
 BIN_NO = 20
 BIN_START = 10
@@ -172,7 +172,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.layout.addLayout(self.toolbar_bottom)
         self.layout.addWidget(self.log_edit)
 
-        self.setWindowTitle("Zenith BLE FFT Viewer")
+        self.setWindowTitle("Zenith BLE FFT Viewer DEBUG 1")
         self.setWindowIcon(QtGui.QIcon("assets/icon.png"))
 
         scan_button.clicked.connect(self.handle_scan)
